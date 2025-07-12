@@ -1,0 +1,10 @@
+<!doctype html>
+<html><body>
+  <h1>Flask JMeter Demo</h1>
+  <p>Items: {{ count }}</p>
+  <ul>
+    <li><a href="{{ url_for('list_items') }}">/api/items (JSON)</a></li>
+    <li><a href="{{ url_for('submit_item') }}">/submit (form)</a></li>
+    <li><a href="{{ url_for('download') }}">/download (file)</a></li>
+  </ul>
+</body></html>
