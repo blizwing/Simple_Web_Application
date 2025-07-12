@@ -1,6 +1,6 @@
 # JMeter Practice API
 
-This FastAPI application exposes simple CRUD endpoints that are convenient for load-testing with tools such as JMeter. It is ready for production-style deployments and can handle high concurrency when run with multiple workers.
+This FastAPI application exposes simple CRUD endpoints that are convenient for load-testing with tools such as JMeter. It now persists data using a small SQLite database and emits logs for each request. The app is ready for production-style deployments and can handle high concurrency when run with multiple workers.
 
 ## Setup
 
@@ -17,6 +17,8 @@ Launch the app with Uvicorn. Use the `--workers` option to allow several process
 ```bash
 uvicorn main:app --host 0.0.0.0 --port 8000 --workers 4
 ```
+
+The application stores items in a local SQLite database named `items.db`. The first five items are seeded automatically and cannot be modified or removed. Logging is enabled by default and writes informational messages to the console for each request.
 
 ## Available Endpoints
 
