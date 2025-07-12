@@ -1,3 +1,3 @@
-```commandline
-python serve.py
+```bash
+  uvicorn main:app --reload
 ```
