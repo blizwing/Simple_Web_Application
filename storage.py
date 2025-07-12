@@ -1,55 +1,120 @@
-from typing import Dict
+import sqlite3
+from typing import List, Optional
+
 from models import Item, ItemCreate
 
-# ── STATIC BOOTSTRAP DATA ──────────────────────────────────────────────────────
-_items: Dict[int, Item] = {
-    1: Item(id=1, name="Laptop",      description="High-end gaming laptop", price=1500.00),
-    2: Item(id=2, name="Smartphone",  description="Latest Android phone",    price= 799.99),
-    3: Item(id=3, name="Headphones",  description="Noise-cancelling",         price= 199.50),
-    4: Item(id=4, name="Backpack",    description="Waterproof travel pack",    price=  59.99),
-    5: Item(id=5, name="Coffee Mug",  description="Ceramic 12oz mug",           price=  12.00),
-}
+DB_FILE = "items.db"
 
-# next ID is one more than the highest preloaded key
-_next_id = max(_items.keys()) + 1
-# ──────────────────────────────────────────────────────────────────────────────
+# ---------------------------------------------------------------------------
+# Database initialization
+# ---------------------------------------------------------------------------
+_conn = sqlite3.connect(DB_FILE, check_same_thread=False)
+_conn.row_factory = sqlite3.Row
 
-def list_items():
-    return list(_items.values())
+_conn.execute(
+    """CREATE TABLE IF NOT EXISTS items (
+            id INTEGER PRIMARY KEY,
+            name TEXT NOT NULL,
+            description TEXT,
+            price REAL NOT NULL,
+            locked INTEGER NOT NULL DEFAULT 0
+        )"""
+)
+
+# Seed default items (id 1..5, locked)
+def _ensure_defaults():
+    defaults = [
+        (1, "Laptop", "High-end gaming laptop", 1500.00),
+        (2, "Smartphone", "Latest Android phone", 799.99),
+        (3, "Headphones", "Noise-cancelling", 199.50),
+        (4, "Backpack", "Waterproof travel pack", 59.99),
+        (5, "Coffee Mug", "Ceramic 12oz mug", 12.00),
+    ]
+    for did, name, desc, price in defaults:
+        row = _conn.execute("SELECT id FROM items WHERE id=?", (did,)).fetchone()
+        if not row:
+            _conn.execute(
+                "INSERT INTO items (id, name, description, price, locked) VALUES (?,?,?,?,1)",
+                (did, name, desc, price),
+            )
+    _conn.commit()
+
+_ensure_defaults()
+
+# ---------------------------------------------------------------------------
+# Helper functions
+# ---------------------------------------------------------------------------
+
+def _next_id() -> int:
+    row = _conn.execute("SELECT MAX(id) FROM items").fetchone()
+    max_id = row[0] if row and row[0] is not None else 0
+    return max_id + 1
+
+
+def list_items() -> List[Item]:
+    rows = _conn.execute(
+        "SELECT id, name, description, price FROM items ORDER BY id"
+    ).fetchall()
+    return [Item(**dict(r)) for r in rows]
+
 
 def create_item(item_data: ItemCreate) -> Item:
-    global _next_id
+    if item_data.id is not None and item_data.id <= 5:
+        raise ValueError("Cannot create item with reserved id")
 
-    # 1) Decide the new ID
-    if item_data.id is not None:
-        new_id = item_data.id
-        if new_id in _items:
-            raise ValueError(f"Item with id={new_id} already exists")
-        # ensure future auto-ids don’t clash
-        _next_id = max(_next_id, new_id + 1)
-    else:
-        new_id = _next_id
-        _next_id += 1
+    new_id = item_data.id if item_data.id is not None else _next_id()
 
-    # 2) Build & store
-    item = Item(
-        id=new_id,
-        name=item_data.name,
-        description=item_data.description,
-        price=item_data.price
+    row = _conn.execute("SELECT id FROM items WHERE id=?", (new_id,)).fetchone()
+    if row:
+        raise ValueError(f"Item with id={new_id} already exists")
+
+    _conn.execute(
+        "INSERT INTO items (id, name, description, price, locked) VALUES (?,?,?,?,0)",
+        (new_id, item_data.name, item_data.description, item_data.price),
     )
-    _items[new_id] = item
-    return item
+    _conn.commit()
 
-def get_item(item_id: int):
-    return _items.get(item_id)
+    return Item(id=new_id, name=item_data.name, description=item_data.description, price=item_data.price)
 
-def update_item(item_id: int, item_data):
-    if item_id in _items:
-        updated = Item(id=item_id, **item_data.dict())
-        _items[item_id] = updated
-        return updated
-    return None
 
-def delete_item(item_id: int):
-    return _items.pop(item_id, None)
+def get_item(item_id: int) -> Optional[Item]:
+    row = _conn.execute(
+        "SELECT id, name, description, price FROM items WHERE id=?", (item_id,)
+    ).fetchone()
+    return Item(**dict(row)) if row else None
+
+
+def _is_locked(item_id: int) -> bool:
+    row = _conn.execute("SELECT locked FROM items WHERE id=?", (item_id,)).fetchone()
+    return bool(row[0]) if row else False
+
+
+def update_item(item_id: int, item_data: Item) -> Optional[Item]:
+    if _is_locked(item_id):
+        return None
+
+    row = _conn.execute("SELECT id FROM items WHERE id=?", (item_id,)).fetchone()
+    if not row:
+        return None
+
+    _conn.execute(
+        "UPDATE items SET name=?, description=?, price=? WHERE id=?",
+        (item_data.name, item_data.description, item_data.price, item_id),
+    )
+    _conn.commit()
+    return Item(id=item_id, name=item_data.name, description=item_data.description, price=item_data.price)
+
+
+def delete_item(item_id: int) -> Optional[Item]:
+    if _is_locked(item_id):
+        return None
+
+    row = _conn.execute(
+        "SELECT id, name, description, price FROM items WHERE id=?", (item_id,)
+    ).fetchone()
+    if not row:
+        return None
+
+    _conn.execute("DELETE FROM items WHERE id=?", (item_id,))
+    _conn.commit()
+    return Item(**dict(row))
